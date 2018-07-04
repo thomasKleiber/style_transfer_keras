@@ -3,7 +3,7 @@ import sys
 import glob
 from tqdm import *
 import time
-import cv2
+from cv2 import resize, INTER_CUBIC
 import random
 from scipy import ndimage
 from scipy.misc import imsave, imresize, imread
@@ -22,8 +22,7 @@ import tensorflow as tf
 
 
 class stylePyr():
-    ################################################################################
-    ################################
+    ############################################################################
 
     ## init image
     radom_input=False
@@ -31,11 +30,11 @@ class stylePyr():
     im_path='/home/thomas/Desktop/'
     im_extension='.JPG'
 
-    content_img_init_rescale=.1 # 1 = no effect 
+    content_img_init_rescale=1 # 1 = no effect 
     init_noise_amount=0.0
 
     ## style image selection
-    images_folder = '/home/thomas/Desktop/chinise/'
+    style_images_folder = '/home/thomas/Desktop/chinise/'
     use_full_im_folder=False # overrides im_set below
     im_set = [0]
      
@@ -43,7 +42,6 @@ class stylePyr():
     HW=1000
 
     ## algo setup
-    # style_layers = ['block1_conv1','block1_conv2','block2_conv1','block2_conv2','block3_conv1','block3_conv2','block3_conv3','block4_conv1','block4_conv2','block4_conv3','block5_conv1','block5_conv2','block5_conv3']
     style_layers = ['block2_conv2','block3_conv1']
 
     pyrdowns = [ 1, 1, 1, 1 ]
@@ -59,9 +57,7 @@ class stylePyr():
     run_cnt=0
 
     
-    ################################
     ################################################################################
-    
     ## internals 
     inpu_im = ''
 
@@ -71,11 +67,10 @@ class stylePyr():
     grams = list()
     
     ################################################################################
-
-
     def __init__(self):
         print("initialized!")
 
+    ################################################################################
     def clear(self):
         K.clear_session()
         self.X = list()
@@ -86,7 +81,7 @@ class stylePyr():
 
     ################################################################################
     def list_im_folder(self):
-        imgs=glob.glob(self.images_folder + '*.jpg')
+        imgs=glob.glob(self.style_images_folder + '*.jpg')
         imgs.sort()
 
         print("--------------------------")
@@ -100,18 +95,19 @@ class stylePyr():
         print("\n")
 
 
+    ################################################################################
     def load_images(self):
-        imgs=glob.glob(self.images_folder + '*.jpg')
+        imgs=glob.glob(self.style_images_folder + '*.jpg')
         imgs.sort()
         if self.use_full_im_folder:
             self.im_set=range(len(imgs))
 
         for n, id_ in enumerate(imgs):
-            img = cv2.imread(id_)
+            img = imageio.imread(id_)
             img = np.float32(img)
             W,H,_=img.shape
             # img = img[W//4:3*W//4, H//4:3*H//4]
-            img = cv2.resize(img, (self.HW,self.HW), interpolation=cv2.INTER_CUBIC)
+            img = resize(img, (self.HW,self.HW), interpolation=INTER_CUBIC)
             self.X.append(img)
 
         for i in range(len(self.im_set)):
@@ -318,7 +314,7 @@ class stylePyr():
             imset_str = str(self.im_set[0])
             for ii in range(len(self.im_set)-1):
                 imset_str = imset_str + '_' + str(self.im_set[i+1])
-            imname = str(self.run_cnt) + '_' + self.im_name + '_' + self.images_folder.split('/')[-2] + '_' + imset_str +  '.jpg'
+            imname = str(self.run_cnt) + '_' + self.im_name + '_' + self.style_images_folder.split('/')[-2] + '_' + imset_str +  '.jpg'
         else:
             imname = str(self.run_cnt) + '_' + self.out_name + '.jpg'
         imageio.imwrite(self.out_folder + '/' + imname, stylized_img)
@@ -331,7 +327,7 @@ class stylePyr():
     def save_bilan(self):
         fig, ax = plt.subplots( nrows=1, ncols=3, figsize=(150,50) )
 
-        ax[0].imshow(cv2.imread(imgs[self.im_set[0]]))
+        ax[0].imshow(imageio.imread(imgs[self.im_set[0]]))
         ax[1].imshow(stylized_img)
         ax[2].imshow(content_img_raw)
         fig.savefig('bilan.png')
@@ -360,13 +356,13 @@ class stylePyr():
 
 def preprocess_image(img):
   img = img.astype(np.float32)
-  img = img[..., ::-1]
+  #img = img[..., ::-1]
   img = img - 128
   return img
 
 def preprocess_image_expand(img):
   img = img.astype(np.float32)
-  img = img[..., ::-1]
+  #img = img[..., ::-1]
   img = img - 128
   img = np.expand_dims(img, axis=0)
   return img
