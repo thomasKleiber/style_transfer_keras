@@ -60,6 +60,8 @@ class stylePyr():
     ################################################################################
     ## internals 
     inpu_im = ''
+    pc = 1         # pyramid count
+    po = [0,0,0,0] # pyramid offsets
 
     X = list()
     pimi = list()
@@ -78,6 +80,8 @@ class stylePyr():
         self.preds = list()
         self.grams = list()
         self.inpu_im = self.im_path + self.im_name + self.im_extension
+        self.pc = 1
+        self.po = [0, 0, 0, 0]
 
     ################################################################################
     def list_im_folder(self):
@@ -135,12 +139,20 @@ class stylePyr():
         x6 = AveragePooling2D((2, 2), padding='same')(x5)
 
         if self.pyrdowns[0] > 0:
+            self.po[0] = self.pc
+            self.pc = self.pc + 1
             vgg16_pd0 = VGG16(input_tensor=x0, weights='imagenet', include_top=False)
         if self.pyrdowns[1] > 0:
+            self.po[1] = self.pc
+            self.pc = self.pc + 1
             vgg16_pd1 = VGG16(input_tensor=x1, weights='imagenet', include_top=False)
         if self.pyrdowns[2] > 0:
+            self.po[2] = self.pc
+            self.pc = self.pc + 1
             vgg16_pd2 = VGG16(input_tensor=x2, weights='imagenet', include_top=False)
         if self.pyrdowns[3] > 0:
+            self.po[3] = self.pc
+            self.pc = self.pc + 1
             vgg16_pd3 = VGG16(input_tensor=x3, weights='imagenet', include_top=False)
 
         for layer_name in self.style_layers:
@@ -174,7 +186,13 @@ class stylePyr():
             self.grams.append(np.array(GI))
         K.clear_session()
 
-
+    ################################################################################
+    def gram_loss(self, i, j, G, chw):
+        """ i index in self.grams, j image index """
+        num = K.sum(K.square(np.squeeze(self.grams[i][j])-G)) 
+        den = (len(self.im_set) * 4. * ((chw)**2))
+        return num / den
+        
 
     ################################################################################
     def iterate(self):
@@ -226,7 +244,7 @@ class stylePyr():
             b, h, w, c = layer_features.shape.as_list()
             G = gram_matrix(generated_features)
             for i in range(len(self.im_set)):
-                style_loss = style_loss + K.sum(K.square(np.squeeze(self.grams[5*L][i])-G)) / (len(self.im_set) * 4. * ((c*h*w)**2))
+                style_loss = style_loss + self.gram_loss(self.pc*L, i, G, c*h*w)
 
             if self.pyrdowns[0] > 0:
                 layer_features = vgg16_pd0.get_layer(self.style_layers[L]).output
@@ -234,7 +252,7 @@ class stylePyr():
                 b, h, w, c = layer_features.shape.as_list()
                 G = gram_matrix(generated_features)
                 for i in range(len(self.im_set)):
-                    style_loss_pd0 = style_loss_pd0 + K.sum(K.square(np.squeeze(self.grams[5*L+1][i])-G)) / (len(self.im_set) * 4. * ((c*h*w)**2))
+                    style_loss_pd0 = style_loss_pd0 + self.gram_loss(self.pc*L + self.po[0], i, G, c*h*w)
             
             if self.pyrdowns[1] > 0:
                 layer_features = vgg16_pd1.get_layer(self.style_layers[L]).output
@@ -242,7 +260,7 @@ class stylePyr():
                 b, h, w, c = layer_features.shape.as_list()
                 G = gram_matrix(generated_features)
                 for i in range(len(self.im_set)):
-                    style_loss_pd1 = style_loss_pd1 + K.sum(K.square(np.squeeze(self.grams[5*L+2][i])-G)) / (len(self.im_set) * 4. * ((c*h*w)**2))
+                    style_loss_pd1 = style_loss_pd1 + self.gram_loss(self.pc*L + self.po[1], i, G, c*h*w)
             
             if self.pyrdowns[2] > 0:
                 layer_features = vgg16_pd2.get_layer(self.style_layers[L]).output
@@ -250,7 +268,7 @@ class stylePyr():
                 b, h, w, c = layer_features.shape.as_list()
                 G = gram_matrix(generated_features)
                 for i in range(len(self.im_set)):
-                    style_loss_pd2 = style_loss_pd2 + K.sum(K.square(np.squeeze(self.grams[5*L+3][i])-G)) / (len(self.im_set) * 4. * ((c*h*w)**2))
+                    style_loss_pd2 = style_loss_pd2 + self.gram_loss(self.pc*L + self.po[2], i, G, c*h*w)
                 
             if self.pyrdowns[3] > 0:
                 layer_features = vgg16_pd3.get_layer(self.style_layers[L]).output
@@ -258,7 +276,7 @@ class stylePyr():
                 b, h, w, c = layer_features.shape.as_list()
                 G = gram_matrix(generated_features)
                 for i in range(len(self.im_set)):
-                    style_loss_pd3 = style_loss_pd3 + K.sum(K.square(np.squeeze(self.grams[5*L+4][i])-G)) / (len(self.im_set) * 4. * ((c*h*w)**2))
+                    style_loss_pd3 = style_loss_pd3 + self.gram_loss(self.pc*L + self.po[3], i, G, c*h*w)
 
 
 
@@ -294,7 +312,7 @@ class stylePyr():
                 print("%-3d : %s (%.3e, %.2f / %.3e, %.2f)" 
                     % (i, toc(), outputs[1], lp, outputs[2], lpd))
 
-                if (lp < 1) and (lpd < 1):
+                if (lp < 1) and (np.isnan(lpd) or (lpd < 1)):
                     break
 
                 if (lp < self.learning_rates[lr_idx][1]) and (lpd < self.learning_rates[lr_idx][1]) :
