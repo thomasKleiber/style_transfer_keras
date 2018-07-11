@@ -13,10 +13,8 @@ s=stylePyr()
 # Use random input instead of real image. Bypasses the following 
 # "content images" configs. (*)
 s.radom_input=True
-# Content image path will be im_path + im_name + im_extension (**)
-s.im_name='jo'
-s.im_path='/home/thomas/Desktop/'
-s.im_extension='.JPG'
+# Content image (**)
+s.input_img='/home/thomas/Desktop/jo.JPG'
 # Initial rescale of content image. 1 is "full scale", 0 will give
 # similar results as setting random_input to True
 s.content_img_init_rescale=1 

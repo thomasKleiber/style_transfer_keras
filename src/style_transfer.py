@@ -26,9 +26,7 @@ class stylePyr():
 
     ## init image
     radom_input=False
-    im_name='toulouse'
-    im_path='/home/thomas/Desktop/'
-    im_extension='.JPG'
+    input_img = '/home/thomas/Desktop/toulouse.JPG'
 
     content_img_init_rescale=1 # 1 = no effect 
     init_noise_amount=0.0
@@ -59,7 +57,6 @@ class stylePyr():
     
     ################################################################################
     ## internals 
-    inpu_im = ''
     pc = 1         # pyramid count
     po = [0,0,0,0] # pyramid offsets
 
@@ -79,7 +76,6 @@ class stylePyr():
         self.pimi = list()
         self.preds = list()
         self.grams = list()
-        self.inpu_im = self.im_path + self.im_name + self.im_extension
         self.pc = 1
         self.po = [0, 0, 0, 0]
 
@@ -200,7 +196,7 @@ class stylePyr():
             np.random.seed(int(time.time()))
             stylized_img_tensor = K.variable(np.random.normal(size=(1, self.HW, self.HW, 3), loc=0., scale=0.1))
         else:
-            content_img_raw = imageio.imread(self.inpu_im)
+            content_img_raw = imageio.imread(self.input_img)
             content_img_raw = resize_image(content_img_raw, target_size=(self.HW,self.HW))
             content_img = preprocess_image_expand(content_img_raw)
             content_img *= self.content_img_init_rescale
@@ -327,14 +323,9 @@ class stylePyr():
                 stylized_img = deprocess_image(stylized_img)
 
                 imageio.imwrite(self.out_folder + '/' + 'im.jpg', stylized_img)
-        
-        if self.out_name == '':
-            imset_str = str(self.im_set[0])
-            for ii in range(len(self.im_set)-1):
-                imset_str = imset_str + '_' + str(self.im_set[i+1])
-            imname = str(self.run_cnt) + '_' + self.im_name + '_' + self.style_images_folder.split('/')[-2] + '_' + imset_str +  '.jpg'
-        else:
-            imname = str(self.run_cnt) + '_' + self.out_name + '.jpg'
+
+        out_name = self.out_name if self.out_name != '' else 'im'
+        imname = str(self.run_cnt) + '_' + out_name + '.jpg'
         imageio.imwrite(self.out_folder + '/' + imname, stylized_img)
         print(imname + " saved")
         self.run_cnt = self.run_cnt+1;
