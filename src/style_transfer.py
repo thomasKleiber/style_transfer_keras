@@ -106,7 +106,6 @@ class stylePyr():
             img = imageio.imread(id_)
             img = np.float32(img)
             W,H,_=img.shape
-            # img = img[W//4:3*W//4, H//4:3*H//4]
             img = resize(img, (self.HW,self.HW), interpolation=INTER_CUBIC)
             self.X.append(img)
 
@@ -114,6 +113,7 @@ class stylePyr():
             imi=preprocess_image(self.X[self.im_set[i]])
             self.pimi.append(imi)
         self.pimi=np.array(self.pimi)
+
 
 
     ################################################################################
@@ -158,19 +158,19 @@ class stylePyr():
             self.preds.append(pred)
 
             if s.pyrdowns[0] > 0:
-                mx = Model(input=input_img, outputs=vgg16_pd0.get_layer(layer_name).output)
+                mx = get_vgg16_extr(input_img, x0, layer_name) 
                 pred = mx.predict(self.pimi)
                 self.preds.append(pred)
             if s.pyrdowns[1] > 0:
-                mx = Model(input=input_img, outputs=vgg16_pd1.get_layer(layer_name).output)
+                mx = get_vgg16_extr(input_img, x1, layer_name) 
                 pred = mx.predict(self.pimi)
                 self.preds.append(pred)
             if s.pyrdowns[2] > 0:
-                mx = Model(input=input_img, outputs=vgg16_pd2.get_layer(layer_name).output)
+                mx = get_vgg16_extr(input_img, x2, layer_name) 
                 pred = mx.predict(self.pimi)
                 self.preds.append(pred)
             if s.pyrdowns[3] > 0:
-                mx = Model(input=input_img, outputs=vgg16_pd3.get_layer(layer_name).output)
+                mx = get_vgg16_extr(input_img, x3, layer_name) 
                 pred = mx.predict(self.pimi)
                 self.preds.append(pred)
 
@@ -219,14 +219,14 @@ class stylePyr():
         x5 = AveragePooling2D((2, 2), padding='same')(x4)
         x6 = AveragePooling2D((2, 2), padding='same')(x5)
 
-        #vgg16_ = VGG16(weights='imagenet', include_top=False)
-        #mx = Model(input=vgg16_.input, outputs=vgg16.get_layer(self.style_layers[-1]).output)
-
-        vgg16_pd0 = VGG16(input_tensor=x0, weights='imagenet', include_top=False)
-        vgg16_pd1 = VGG16(input_tensor=x1, weights='imagenet', include_top=False)
-        vgg16_pd2 = VGG16(input_tensor=x2, weights='imagenet', include_top=False)
-        vgg16_pd3 = VGG16(input_tensor=x3, weights='imagenet', include_top=False)
-
+        if s.pyrdowns[0] > 0:
+            vgg16_pd0 = get_vgg16_extr(input_img, x0, self.style_layers[-1]) 
+        if s.pyrdowns[1] > 0:
+            vgg16_pd1 = get_vgg16_extr(input_img, x1, self.style_layers[-1]) 
+        if s.pyrdowns[2] > 0:
+            vgg16_pd2 = get_vgg16_extr(input_img, x2, self.style_layers[-1]) 
+        if s.pyrdowns[3] > 0:
+            vgg16_pd3 = get_vgg16_extr(input_img, x3, self.style_layers[-1]) 
 
 
         style_loss = K.variable(0.)
@@ -362,6 +362,14 @@ class stylePyr():
 ################################################################################
 ################################################################################
 ################################################################################
+
+def get_vgg16_extr(input_image, vgg16_input_tensor, layer):
+    vgg = VGG16(input_tensor=vgg16_input_tensor, weights='imagenet', include_top=False)
+    mx = Model(input=input_image, outputs=vgg.get_layer(layer).output)
+    for layer in mx.layers:
+            layer.trainable = False
+    return mx
+
 
 def preprocess_image(img):
   img = img.astype(np.float32)
