@@ -6,6 +6,7 @@ I implemented the following changes:
 - Ability to use several style images
 - Use multi-scale style analysing
 - Content image not used in loss
+- improved memory usage (produces bigger images!)
 
 ## Dependencies
 
