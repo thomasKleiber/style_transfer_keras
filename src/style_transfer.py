@@ -1,4 +1,5 @@
 import os
+import gc
 import sys
 import glob
 from tqdm import *
@@ -18,6 +19,7 @@ import keras.backend as K
 from keras.models import Model
 from keras.optimizers import Adam
 import tensorflow as tf
+from style_utils import *
 
 
 
@@ -43,6 +45,7 @@ class stylePyr():
     style_layers = ['block2_conv2','block3_conv1']
 
     pyrdowns = [ 1, 1, 1, 1 ]
+    Pooling2D = AveragePooling2D
 
     learning_rates = [[5,2], [0.5, 1.1], [0.05, 0]] # mettre le dernier à 0
     
@@ -57,8 +60,8 @@ class stylePyr():
     
     ################################################################################
     ## internals 
-    pc = 1         # pyramid count
-    po = [0,0,0,0] # pyramid offsets
+    pc = 1            # pyramid count
+    po = np.zeros(50) # pyramid offsets
 
     X = list()
     pimi = list()
@@ -77,7 +80,7 @@ class stylePyr():
         self.preds = list()
         self.grams = list()
         self.pc = 1
-        self.po = [0, 0, 0, 0]
+        self.po = np.zeros(50)
 
     ################################################################################
     def list_im_folder(self):
@@ -126,65 +129,36 @@ class stylePyr():
         vgg16 = VGG16(weights='imagenet', include_top=False)
 
         input_img = Input(shape=((None,None,3)))
-        x0 = AveragePooling2D((2, 2), padding='same')(input_img)
-        x1 = AveragePooling2D((2, 2), padding='same')(x0)
-        x2 = AveragePooling2D((2, 2), padding='same')(x1)
-        x3 = AveragePooling2D((2, 2), padding='same')(x2)
-        x4 = AveragePooling2D((2, 2), padding='same')(x3)
-        x5 = AveragePooling2D((2, 2), padding='same')(x4)
-        x6 = AveragePooling2D((2, 2), padding='same')(x5)
-
-        if self.pyrdowns[0] > 0:
-            self.po[0] = self.pc
-            self.pc = self.pc + 1
-            vgg16_pd0 = VGG16(input_tensor=x0, weights='imagenet', include_top=False)
-        if self.pyrdowns[1] > 0:
-            self.po[1] = self.pc
-            self.pc = self.pc + 1
-            vgg16_pd1 = VGG16(input_tensor=x1, weights='imagenet', include_top=False)
-        if self.pyrdowns[2] > 0:
-            self.po[2] = self.pc
-            self.pc = self.pc + 1
-            vgg16_pd2 = VGG16(input_tensor=x2, weights='imagenet', include_top=False)
-        if self.pyrdowns[3] > 0:
-            self.po[3] = self.pc
-            self.pc = self.pc + 1
-            vgg16_pd3 = VGG16(input_tensor=x3, weights='imagenet', include_top=False)
+        for i in range(len(s.pyrdowns)):
+            if self.pyrdowns[i] > 0:
+                self.po[i] = self.pc
+                self.pc = self.pc + 1
 
         for layer_name in self.style_layers:
             mx = Model(input=vgg16.input, outputs=vgg16.get_layer(layer_name).output)
-
             pred = mx.predict(self.pimi)
-            self.preds.append(pred)
+            self.append_pred(pred, session)
+            x = input_img 
+            for i in range(len(s.pyrdowns)):
+                x = self.Pooling2D((2,2), padding='same')(x)
+                if s.pyrdowns[i] > 0:
+                    mx = get_vgg16_extr(input_img, x, layer_name) 
+                    pred = mx.predict(self.pimi)
+                    self.append_pred(pred, session)
 
-            if s.pyrdowns[0] > 0:
-                mx = get_vgg16_extr(input_img, x0, layer_name) 
-                pred = mx.predict(self.pimi)
-                self.preds.append(pred)
-            if s.pyrdowns[1] > 0:
-                mx = get_vgg16_extr(input_img, x1, layer_name) 
-                pred = mx.predict(self.pimi)
-                self.preds.append(pred)
-            if s.pyrdowns[2] > 0:
-                mx = get_vgg16_extr(input_img, x2, layer_name) 
-                pred = mx.predict(self.pimi)
-                self.preds.append(pred)
-            if s.pyrdowns[3] > 0:
-                mx = get_vgg16_extr(input_img, x3, layer_name) 
-                pred = mx.predict(self.pimi)
-                self.preds.append(pred)
-
-        for n, p in enumerate(self.preds):
-            GI=list()
-            for i in range(p.shape[0]):
-                G=gram_matrix(np.squeeze(p[i,:,:,:]))
-                GI.append(G.eval(session=session))
-            self.grams.append(np.array(GI))
         K.clear_session()
+
+    def append_pred(self, p, session):
+        GI=list()
+        for i in range(p.shape[0]):
+            G = gram_matrix(np.squeeze(p[i,:,:,:]))
+            GI.append(G.eval(session=session))
+        self.grams.append(np.array(GI))
 
     ################################################################################
     def gram_loss(self, i, j, G, chw):
         """ i index in self.grams, j image index """
+        i=int(i)
         num = K.sum(K.square(np.squeeze(self.grams[i][j])-G)) 
         den = (len(self.im_set) * 4. * ((chw)**2))
         return num / den
@@ -192,15 +166,20 @@ class stylePyr():
 
     ################################################################################
     def iterate(self):
+
+        gc.collect()
         if self.radom_input:
             np.random.seed(int(time.time()))
-            stylized_img_tensor = K.variable(np.random.normal(size=(1, self.HW, self.HW, 3), loc=0., scale=0.1))
+            stylized_img_tensor = \
+                K.variable(np.random.normal(size=(1, self.HW, self.HW, 3),
+                                            loc=0., scale=0.1))
         else:
             content_img_raw = imageio.imread(self.input_img)
             content_img_raw = resize_image(content_img_raw, target_size=(self.HW,self.HW))
             content_img = preprocess_image_expand(content_img_raw)
             content_img *= self.content_img_init_rescale
-            content_img += np.random.normal(loc=0.0, scale=self.init_noise_amount, size=content_img.shape) 
+            content_img += np.random.normal(loc=0.0, scale=self.init_noise_amount,
+                                            size=content_img.shape) 
                 
             content_img_tensor = K.constant(content_img)
             stylized_img_tensor = K.variable(content_img_tensor)
@@ -208,82 +187,51 @@ class stylePyr():
 
         ################################################################################
         input_tensor = K.concatenate([stylized_img_tensor], axis=0)
-        vgg16 = VGG16(input_tensor=input_tensor, weights='imagenet', include_top=False)
 
         input_img = Input(tensor=input_tensor)
-        x0 = AveragePooling2D((2, 2), padding='same')(input_img)
-        x1 = AveragePooling2D((2, 2), padding='same')(x0)
-        x2 = AveragePooling2D((2, 2), padding='same')(x1)
-        x3 = AveragePooling2D((2, 2), padding='same')(x2)
-        x4 = AveragePooling2D((2, 2), padding='same')(x3)
-        x5 = AveragePooling2D((2, 2), padding='same')(x4)
-        x6 = AveragePooling2D((2, 2), padding='same')(x5)
+        x=input_img
+        vgg16 = get_vgg16_extr(input_img, input_img, self.style_layers[-1])
 
-        if s.pyrdowns[0] > 0:
-            vgg16_pd0 = get_vgg16_extr(input_img, x0, self.style_layers[-1]) 
-        if s.pyrdowns[1] > 0:
-            vgg16_pd1 = get_vgg16_extr(input_img, x1, self.style_layers[-1]) 
-        if s.pyrdowns[2] > 0:
-            vgg16_pd2 = get_vgg16_extr(input_img, x2, self.style_layers[-1]) 
-        if s.pyrdowns[3] > 0:
-            vgg16_pd3 = get_vgg16_extr(input_img, x3, self.style_layers[-1]) 
-
+        vgg16u = []
+        style_lossu = []
+        for i in range(len(s.pyrdowns)):
+            x = self.Pooling2D((2,2), padding='same')(x)
+            if s.pyrdowns[i] > 0:
+                vgg16u.append(get_vgg16_extr(input_img, x, self.style_layers[-1]))
+            else:
+                vgg16u.append(None)
+            style_lossu.append(K.variable(0.))
 
         style_loss = K.variable(0.)
-        style_loss_pd0 = K.variable(0.)
-        style_loss_pd1 = K.variable(0.)
-        style_loss_pd2 = K.variable(0.)
-        style_loss_pd3 = K.variable(0.)
+
         for L in range(len(self.style_layers)):
             layer_features = vgg16.get_layer(self.style_layers[L]).output
             generated_features = layer_features[0, :, :, :]
             b, h, w, c = layer_features.shape.as_list()
             G = gram_matrix(generated_features)
             for i in range(len(self.im_set)):
-                style_loss = style_loss + self.gram_loss(self.pc*L, i, G, c*h*w)
+                style_loss = style_loss \
+                    + self.gram_loss(self.pc*L, i, G, c*h*w)
 
-            if self.pyrdowns[0] > 0:
-                layer_features = vgg16_pd0.get_layer(self.style_layers[L]).output
-                generated_features = layer_features[0, :, :, :]
-                b, h, w, c = layer_features.shape.as_list()
-                G = gram_matrix(generated_features)
-                for i in range(len(self.im_set)):
-                    style_loss_pd0 = style_loss_pd0 + self.gram_loss(self.pc*L + self.po[0], i, G, c*h*w)
-            
-            if self.pyrdowns[1] > 0:
-                layer_features = vgg16_pd1.get_layer(self.style_layers[L]).output
-                generated_features = layer_features[0, :, :, :]
-                b, h, w, c = layer_features.shape.as_list()
-                G = gram_matrix(generated_features)
-                for i in range(len(self.im_set)):
-                    style_loss_pd1 = style_loss_pd1 + self.gram_loss(self.pc*L + self.po[1], i, G, c*h*w)
-            
-            if self.pyrdowns[2] > 0:
-                layer_features = vgg16_pd2.get_layer(self.style_layers[L]).output
-                generated_features = layer_features[0, :, :, :]
-                b, h, w, c = layer_features.shape.as_list()
-                G = gram_matrix(generated_features)
-                for i in range(len(self.im_set)):
-                    style_loss_pd2 = style_loss_pd2 + self.gram_loss(self.pc*L + self.po[2], i, G, c*h*w)
-                
-            if self.pyrdowns[3] > 0:
-                layer_features = vgg16_pd3.get_layer(self.style_layers[L]).output
-                generated_features = layer_features[0, :, :, :]
-                b, h, w, c = layer_features.shape.as_list()
-                G = gram_matrix(generated_features)
-                for i in range(len(self.im_set)):
-                    style_loss_pd3 = style_loss_pd3 + self.gram_loss(self.pc*L + self.po[3], i, G, c*h*w)
+            for i in range(len(s.pyrdowns)): 
+                if s.pyrdowns[i] > 0:
+                    layer_features = vgg16u[i].get_layer(self.style_layers[L]).output
+                    generated_features = layer_features[0, :, :, :]
+                    b, h, w, c = layer_features.shape.as_list()
+                    G = gram_matrix(generated_features)
+                    for j in range(len(self.im_set)):
+                        style_lossu[i] = style_lossu[i] \
+                            + self.gram_loss(self.pc*L + self.po[i], j, G, c*h*w)
 
-
+        gc.collect()
 
         ################################################################################
-        alpha=1
-        loss = alpha*style_loss + self.pyrdowns[0]*style_loss_pd0 \
-            + self.pyrdowns[1]*style_loss_pd1 \
-            + self.pyrdowns[2]*style_loss_pd2 \
-            + self.pyrdowns[3]*style_loss_pd3
-        style_loss_pd = style_loss_pd0+style_loss_pd1+style_loss_pd2+style_loss_pd3
-
+        loss = style_loss
+        style_loss_pd = 0
+        for i in range(len(s.pyrdowns)): 
+            style_loss_pd = style_loss_pd + self.pyrdowns[i]*style_lossu[i]
+        loss = loss + style_loss_pd
+        
         opt = Adam(lr=(self.learning_rates[0][0]))
         lr_idx=0
         updates = opt.get_updates([stylized_img_tensor], {}, loss)
@@ -311,7 +259,8 @@ class stylePyr():
                 if (lp < 1) and (np.isnan(lpd) or (lpd < 1)):
                     break
 
-                if (lp < self.learning_rates[lr_idx][1]) and (lpd < self.learning_rates[lr_idx][1]) :
+                if (lp < self.learning_rates[lr_idx][1]) \
+                        and (lpd < self.learning_rates[lr_idx][1]) :
                     lr_idx = lr_idx+1
                     print("switching to lr=%.0e" % (self.learning_rates[lr_idx][0]))
                     opt.lr = self.learning_rates[lr_idx][0]
@@ -323,6 +272,7 @@ class stylePyr():
                 stylized_img = deprocess_image(stylized_img)
 
                 imageio.imwrite(self.out_folder + '/' + 'im.jpg', stylized_img)
+            gc.collect()
 
         out_name = self.out_name if self.out_name != '' else 'im'
         imname = str(self.run_cnt) + '_' + out_name + '.jpg'
@@ -359,67 +309,3 @@ class stylePyr():
 
 
 
-################################################################################
-################################################################################
-################################################################################
-
-def get_vgg16_extr(input_image, vgg16_input_tensor, layer):
-    vgg = VGG16(input_tensor=vgg16_input_tensor, weights='imagenet', include_top=False)
-    mx = Model(input=input_image, outputs=vgg.get_layer(layer).output)
-    for layer in mx.layers:
-            layer.trainable = False
-    return mx
-
-
-def preprocess_image(img):
-  img = img.astype(np.float32)
-  #img = img[..., ::-1]
-  img = img - 128
-  return img
-
-def preprocess_image_expand(img):
-  img = img.astype(np.float32)
-  #img = img[..., ::-1]
-  img = img - 128
-  img = np.expand_dims(img, axis=0)
-  return img
-
-def scale_for_display(img):
-    scaled=(img-img.min())/255
-    scaled=scaled/scaled.max()
-    return scaled
-
-def deprocess_image(img):
-
-    if len(img.shape)>3:
-      img = img[0]
-    # add the mean (BGR format)
-    img += 128
-
-    img = np.clip(img, 0, 255).astype('uint8')
-    return img
-
-def gram_matrix(x):
-    features = K.batch_flatten(K.permute_dimensions(x, (2,0,1)))
-    gram_matrix = K.dot(features, K.transpose(features))
-    return gram_matrix
-
-
-def resize_image(img, target_size=(256, 256)):
-  h, w, _ = img.shape
-  short_edge = min([h,w])
-  yy = int((h - short_edge) / 2.)
-  xx = int((w - short_edge) / 2.)
-  img = img[yy: yy + short_edge, xx: xx + short_edge]
-  img = imresize(img, size=target_size, interp='bicubic')
-  return img
-
-def tic():
-    global startTime_for_tictoc
-    startTime_for_tictoc = time.time()
-
-def toc():
-    if 'startTime_for_tictoc' in globals():
-        return "%.3f s" % (time.time() - startTime_for_tictoc)
-    else:
-        return "Toc: start time not set"
