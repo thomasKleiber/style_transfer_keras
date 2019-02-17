@@ -8,7 +8,7 @@ from cv2 import resize, INTER_CUBIC
 import random
 from scipy import ndimage
 from scipy.misc import imsave, imresize, imread
-import imageio 
+import imageio
 import numpy as np
 import matplotlib.pyplot as plt
 from keras.applications.vgg16 import VGG16
@@ -30,14 +30,14 @@ class stylePyr():
     radom_input=False
     input_img = '/home/thomas/Desktop/toulouse.JPG'
 
-    content_img_init_rescale=1 # 1 = no effect 
+    content_img_init_rescale=1 # 1 = no effect
     init_noise_amount=0.0
 
     ## style image selection
     style_images_folder = '/home/thomas/Desktop/chinise/'
     use_full_im_folder=False # overrides im_set below
     im_set = [0]
-     
+
     ## load
     HW=1000
 
@@ -48,7 +48,7 @@ class stylePyr():
     Pooling2D = AveragePooling2D
 
     learning_rates = [[5,2], [0.5, 1.1], [0.05, 0]] # mettre le dernier à 0
-    
+
     ITS=2000
 
     log_granularity=10
@@ -57,9 +57,9 @@ class stylePyr():
     out_name = '' # will be built with imname + layers if ''
     run_cnt=0
 
-    
+
     ################################################################################
-    ## internals 
+    ## internals
     pc = 1            # pyramid count
     po = np.zeros(50) # pyramid offsets
 
@@ -67,7 +67,7 @@ class stylePyr():
     pimi = list()
     preds = list()
     grams = list()
-    
+
     ################################################################################
     def __init__(self):
         print("initialized!")
@@ -83,17 +83,21 @@ class stylePyr():
         self.po = np.zeros(50)
 
     ################################################################################
-    def list_im_folder(self):
+    def list_im_folder(self, needle=""):
         imgs=glob.glob(self.style_images_folder + '*.jpg')
         imgs.sort()
 
         print("--------------------------")
         for n, id_ in enumerate(imgs):
+            display=False
             if n in self.im_set:
                 tag=' * '
-            else:
+                display=True
+             else:
                 tag='   '
-            print("%s%d - %s" % (tag, n, os.path.basename(id_)))
+            name = os.path.basename(id_)
+            if needle in name: display=True
+            if display: print("%s%d - %s" % (tag, n, name))
         print("--------------------------")
         print("\n")
 
@@ -138,11 +142,11 @@ class stylePyr():
             mx = Model(input=vgg16.input, outputs=vgg16.get_layer(layer_name).output)
             pred = mx.predict(self.pimi)
             self.append_pred(pred, session)
-            x = input_img 
+            x = input_img
             for i in range(len(s.pyrdowns)):
                 x = self.Pooling2D((2,2), padding='same')(x)
                 if s.pyrdowns[i] > 0:
-                    mx = get_vgg16_extr(input_img, x, layer_name) 
+                    mx = get_vgg16_extr(input_img, x, layer_name)
                     pred = mx.predict(self.pimi)
                     self.append_pred(pred, session)
 
@@ -159,10 +163,10 @@ class stylePyr():
     def gram_loss(self, i, j, G, chw):
         """ i index in self.grams, j image index """
         i=int(i)
-        num = K.sum(K.square(np.squeeze(self.grams[i][j])-G)) 
+        num = K.sum(K.square(np.squeeze(self.grams[i][j])-G))
         den = (len(self.im_set) * 4. * ((chw)**2))
         return num / den
-        
+
 
     ################################################################################
     def iterate(self):
@@ -179,8 +183,8 @@ class stylePyr():
             content_img = preprocess_image_expand(content_img_raw)
             content_img *= self.content_img_init_rescale
             content_img += np.random.normal(loc=0.0, scale=self.init_noise_amount,
-                                            size=content_img.shape) 
-                
+                                            size=content_img.shape)
+
             content_img_tensor = K.constant(content_img)
             stylized_img_tensor = K.variable(content_img_tensor)
 
@@ -213,7 +217,7 @@ class stylePyr():
                 style_loss = style_loss \
                     + self.gram_loss(self.pc*L, i, G, c*h*w)
 
-            for i in range(len(s.pyrdowns)): 
+            for i in range(len(s.pyrdowns)):
                 if s.pyrdowns[i] > 0:
                     layer_features = vgg16u[i].get_layer(self.style_layers[L]).output
                     generated_features = layer_features[0, :, :, :]
@@ -228,10 +232,10 @@ class stylePyr():
         ################################################################################
         loss = style_loss
         style_loss_pd = 0
-        for i in range(len(s.pyrdowns)): 
+        for i in range(len(s.pyrdowns)):
             style_loss_pd = style_loss_pd + self.pyrdowns[i]*style_lossu[i]
         loss = loss + style_loss_pd
-        
+
         opt = Adam(lr=(self.learning_rates[0][0]))
         lr_idx=0
         updates = opt.get_updates([stylized_img_tensor], {}, loss)
@@ -253,7 +257,7 @@ class stylePyr():
             if (i % self.log_granularity) == 0:
                 lp = last_loss/outputs[1]
                 lpd = last_loss_pd/outputs[2]
-                print("%-3d : %s (%.3e, %.2f / %.3e, %.2f)" 
+                print("%-3d : %s (%.3e, %.2f / %.3e, %.2f)"
                     % (i, toc(), outputs[1], lp, outputs[2], lpd))
 
                 if (lp < 1) and (np.isnan(lpd) or (lpd < 1)):
@@ -265,8 +269,8 @@ class stylePyr():
                     print("switching to lr=%.0e" % (self.learning_rates[lr_idx][0]))
                     opt.lr = self.learning_rates[lr_idx][0]
 
-                last_loss = outputs[1] 
-                last_loss_pd = outputs[2] 
+                last_loss = outputs[1]
+                last_loss_pd = outputs[2]
 
                 stylized_img = K.get_value(stylized_img_tensor)
                 stylized_img = deprocess_image(stylized_img)

@@ -1,22 +1,9 @@
-import os
-import gc
-import sys
-import glob
-from cv2 import resize, INTER_CUBIC
-import random
-from scipy import ndimage
-from scipy.misc import imsave, imresize, imread
-import imageio 
+from cv2 import resize
+from scipy.misc import imresize
 import numpy as np
-import matplotlib.pyplot as plt
 from keras.applications.vgg16 import VGG16
-from keras.applications.inception_v3 import InceptionV3
-from keras.backend.tensorflow_backend import set_session
-from keras.layers import Input, Dense, Conv2D, MaxPooling2D, UpSampling2D, AveragePooling2D
 import keras.backend as K
 from keras.models import Model
-from keras.optimizers import Adam
-import tensorflow as tf
 import time
 
 
@@ -30,7 +17,6 @@ def get_vgg16_extr(input_image, vgg16_input_tensor, layer):
     for layer in mx.layers:
         layer.trainable = False
     return mx
-
 
 def preprocess_image(img):
   img = img.astype(np.float32)
@@ -50,17 +36,31 @@ def scale_for_display(img):
     scaled=scaled/scaled.max()
     return scaled
 
+def resize_keep_scale(img, HW):
+    w, h, c = img.shape
+    fac = HW / np.sqrt(w*h)
+    new_size = (np.int(h*fac), np.int(w*fac))
+    # print('%s -> resizing %s to %s' % (HW, str((w,h)) ,str(new_size)))
+    return resize(img, new_size)
+
+def size_w_form_factor(HW, ff):
+    '''ff : W/H'''
+    return (np.int(HW / np.sqrt(ff)), np.int(HW * np.sqrt(ff)))
+
 def deprocess_image(img):
 
     if len(img.shape)>3:
       img = img[0]
-    # add the mean (BGR format)
     img += 128
 
     img = np.clip(img, 0, 255).astype('uint8')
     return img
 
 def gram_matrix(x, mask=None):
+    if type(x) == np.ndarray:
+        w, h, f = x.shape
+    else:
+        w, h, f = x.get_shape().as_list()
     if mask is not None:
         W, H = mask.shape
         x = x * mask[:, :, None] * W * H / (np.sum(mask))
@@ -68,15 +68,14 @@ def gram_matrix(x, mask=None):
     gram_matrix = K.dot(features, K.transpose(features))
     return gram_matrix
 
-
 def resize_image(img, target_size=(256, 256)):
-  h, w, _ = img.shape
-  short_edge = min([h,w])
-  yy = int((h - short_edge) / 2.)
-  xx = int((w - short_edge) / 2.)
-  img = img[yy: yy + short_edge, xx: xx + short_edge]
-  img = imresize(img, size=target_size, interp='bicubic')
-  return img
+    h, w, _ = img.shape
+    short_edge = min([h,w])
+    yy = int((h - short_edge) / 2.)
+    xx = int((w - short_edge) / 2.)
+    img = img[yy: yy + short_edge, xx: xx + short_edge]
+    img = imresize(img, size=target_size, interp='bicubic')
+    return img
 
 def tic():
     global startTime_for_tictoc
@@ -87,3 +86,19 @@ def toc():
         return "%.3f s" % (time.time() - startTime_for_tictoc)
     else:
         return "Toc: start time not set"
+
+def sci(x, prec=2):
+    sign = '-' if x < 0 else ''
+    x = np.abs(x)
+    exp = np.floor(np.log10(x))
+    x = x / 10**exp
+    ent = np.floor(x)
+    x = x - ent
+    dec = np.round(x * 10**prec)
+
+    if prec>0:
+        return '%s%d.%de%d' % (sign, ent, dec, exp)
+    elif prec==0:
+        return '%s%de%d' % (sign, ent, exp)
+    else:
+        return None
