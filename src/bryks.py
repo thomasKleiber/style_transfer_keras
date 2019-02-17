@@ -9,7 +9,7 @@ import re
 
 
 class bryk:
-    def __init__(self, im_path, layer, pyrdowns, HW, vggs, shift=0):
+    def __init__(self, im_path, layer, pyrdowns, HW, vggs):
         self.im_path = im_path
         self.layer = layer
         self.pyrdowns = pyrdowns
@@ -18,25 +18,23 @@ class bryk:
         self.mask = None
         self.loss_factor = 1
         self.vggs = vggs
-        self.shift = shift
 
     def __str__(self):
         nm = self.im_path
         m = re.match('.*/(.*)\.[jJ][pP][eE]?[gG]', nm)
         if m: nm = m.group(1)
-        return '%s, %s, %d pyrd., %s%s%s%s' % \
+        return '%s, %s, %d pyrd., %s%s%s' % \
             (nm, self.layer, self.pyrdowns,
             'ON' if self.active else 'off',
             ', mask %s' % self.mask_str if self.mask is not None else '',
-            ', x %f' % self.loss_factor if self.loss_factor != 1 else '',
-            ', %d shifts' % self.shift if self.shift != 0 else '')
+            ', x %f' % self.loss_factor if self.loss_factor != 1 else '')
 
     def id(self):
         nm = self.im_path
         m = re.match('.*/(.*)\.[jJ][pP][eE]?[gG]', nm)
         if m: nm = m.group(1)
         return '%s__%s__%d_pyrd_%d_sh' \
-                % (nm, self.layer, self.pyrdowns, self.shift)
+                % (nm, self.layer, self.pyrdowns)
 
     def nickname(self):
         m = re.match('block([0-9])_conv([0-9])', self.layer)
@@ -67,8 +65,7 @@ class bryk:
         self.st.get_masks()
 
     def _get_iterable_model(self, input_tensor):
-        self.mx = self.vggs.get(input_tensor, self.pyrdowns,
-                                self.layer, self.shift)
+        self.mx = self.vggs.get(input_tensor, self.pyrdowns, self.layer)
 
     def _init_progress_monitor(self):
         self.last_loss = np.Inf
@@ -124,10 +121,7 @@ class bryk:
             x = x * mask[:, :, None] * W * H / np.sum(mask)
         features = K.batch_flatten(K.permute_dimensions(x, (2,0,1)))
         gram_matrix = K.dot(features, K.transpose(features))
-        if self.shift == 0: fac = w*h*f
-        elif self.shift == 1: fac = (w-1)*h*f
-        else: fac = w*(h-1)*f
-        return self.loss_factor * gram_matrix / fac
+        return self.loss_factor * gram_matrix / (w*h*f)
 
     def get_gram_tgt(self):
         config = tf.ConfigProto()

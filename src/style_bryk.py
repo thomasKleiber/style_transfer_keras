@@ -31,7 +31,6 @@ class styleWall():
 
     ## style image selection
     style_images_folder = '/home/thomas/Desktop/'
-    use_full_im_folder = False # overrides im_set below
     im_set = [2]
 
     ## load
@@ -141,26 +140,6 @@ class styleWall():
             for L in self.style_layers:
                 for p in self.pyrdowns:
                     self.bryks.append(bryk(im, L, p, self.HW, self.vggs))
-
-    def _get_shift_bryks(self, mode):
-        self.bryks = []
-        imgs = self._get_style_im_list(filtered=True)
-        for im in imgs:
-            self.bryks.append(bryk(im, 'block1_conv1', 0, self.HW, self.vggs,0))
-            if mode > 0:
-                self.bryks.append(bryk(im, 'block1_conv1', 0, self.HW, self.vggs,1))
-                self.bryks.append(bryk(im, 'block1_conv1', 0, self.HW, self.vggs,2))
-                self.bryks.append(bryk(im, 'block1_conv1', 0, self.HW, self.vggs,3))
-            if mode > 1:
-                self.bryks.append(bryk(im, 'block1_conv2', 0, self.HW, self.vggs,1))
-                self.bryks.append(bryk(im, 'block1_conv2', 0, self.HW, self.vggs,2))
-                self.bryks.append(bryk(im, 'block1_conv2', 0, self.HW, self.vggs,3))
-                self.bryks.append(bryk(im, 'block1_conv2', 0, self.HW, self.vggs,0))
-            if mode > 2:
-                self.bryks.append(bryk(im, 'block2_conv1', 0, self.HW, self.vggs,1))
-                self.bryks.append(bryk(im, 'block2_conv1', 0, self.HW, self.vggs,2))
-                self.bryks.append(bryk(im, 'block2_conv1', 0, self.HW, self.vggs,3))
-                self.bryks.append(bryk(im, 'block2_conv1', 0, self.HW, self.vggs,0))
 
     def _load_images(self):
         for b in self.bryks : b.open_im()
@@ -428,13 +407,9 @@ class styleWall():
         imageio.imwrite(path, img, compress_level=0)
 
     def _save_tmp_image(self, tensor, overwrite=True):
-        if not hasattr(self, 'tmp_cnt'):
-            self.tmp_cnt = 0
-        if overwrite:
-            name = self.out_folder + '/im.png'
-        else:
-            name = self.out_folder + '/im%d.png' % self.tmp_cnt
-
+        if not hasattr(self, 'tmp_cnt'): self.tmp_cnt = 0
+        if overwrite: name = self.out_folder + '/im.png'
+        else: name = self.out_folder + '/im%d.png' % self.tmp_cnt
         self.tmp_cnt += 1
         img = self._tensor_to_img(tensor)
         self._save_img(name, img)
@@ -444,14 +419,8 @@ class styleWall():
         out_name = self.out_name if self.out_name != '' else 'im'
         imname = str(self.run_cnt) + '_' + out_name + '.png'
         self._save_img(self.out_folder + '/' + imname, img)
-      #  imf=cv2.bilateralFilter(img,4,75,75)
-      #  imnamef = str(self.run_cnt) + '_' + out_name + 'f.png'
-      #  self._save_img(self.out_folder + '/' + imnamef, imf)
-        if verbose:
-            print(imname + " saved\n")
-     #       print(imnamef + " saved\n")
-        if increment:
-            self.run_cnt = self.run_cnt+1;
+        if verbose: print(imname + " saved\n")
+        if increment: self.run_cnt = self.run_cnt+1;
 
 
     ############################################################################
@@ -469,12 +438,4 @@ class styleWall():
         self._load_images()
         self._get_gramms_target()
         self.iterate(again=True, save=save)
-
-    def paufine(self, mode=1):
-        self.vggs.clear()
-        self._get_shift_bryks(mode=mode)
-        self._load_images()
-        self._get_gramms_target()
-        self.iterate(again=True, save=True, stop_mode='best', overwrite_tmp=False)
-
 
