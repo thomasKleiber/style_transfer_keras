@@ -3,6 +3,7 @@ from scipy.misc import imsave, imresize, imread
 from cv2 import resize, INTER_CUBIC
 import tensorflow as tf
 import imageio
+import keras.backend as K
 #from style_utils import *
 #from style_tree import *
 import re
@@ -16,18 +17,16 @@ class bryk:
         self.HW = HW
         self.active = True
         self.mask = None
-        self.loss_factor = 1
         self.vggs = vggs
 
     def __str__(self):
         nm = self.im_path
         m = re.match('.*/(.*)\.[jJ][pP][eE]?[gG]', nm)
         if m: nm = m.group(1)
-        return '%s, %s, %d pyrd., %s%s%s' % \
+        return '%s, %s, %d pyrd., %s%s' % \
             (nm, self.layer, self.pyrdowns,
             'ON' if self.active else 'off',
-            ', mask %s' % self.mask_str if self.mask is not None else '',
-            ', x %f' % self.loss_factor if self.loss_factor != 1 else '')
+            ', mask %s' % self.mask_str if self.mask is not None else '')
 
     def id(self):
         nm = self.im_path
@@ -108,8 +107,8 @@ class bryk:
         self.get_gram_tgt()
 
     def set_loss_factor(self, factor):
-        self.loss_factor = factor
-        self.get_gram_tgt()
+        K.set_value(self.loss_factor, factor)
+#        self.get_gram_tgt()
 
     def gram_matrix(self, x, mask=None):
         if type(x) == np.ndarray:
@@ -121,19 +120,21 @@ class bryk:
             x = x * mask[:, :, None] * W * H / np.sum(mask)
         features = K.batch_flatten(K.permute_dimensions(x, (2,0,1)))
         gram_matrix = K.dot(features, K.transpose(features))
-        return self.loss_factor * gram_matrix / (w*h*f)
+        return  gram_matrix / (w*h*f)
 
     def get_gram_tgt(self):
         config = tf.ConfigProto()
         session = tf.Session(config=config)
         set_session(session)
+        session.run(tf.global_variables_initializer())
         fms = np.squeeze(self.FMs[0,:,:,:])
         G = self.gram_matrix(fms, self.mask)
         self.gram = G.eval(session=session)
         K.clear_session()
 
     def get_loss(self):
+        self.loss_factor = K.variable(1.)
         fms = self.mx.get_layer(self.layer).output
         G = self.gram_matrix(fms[0,:,:,:])
         self.loss_tensor = K.sum(K.square(self.gram - G))
-        return self.loss_tensor
+        return self.loss_tensor * self.loss_factor
