@@ -60,7 +60,6 @@ class styleWall():
             self.out_folder = out_folder
         self._prepare_output()
         self.init_run_cnt()
-        self.create_tmp_folder()
 
     ############################################################################
     def list_style_folder(self, needle=""):
@@ -115,7 +114,7 @@ class styleWall():
             if not append: self.im_set = candidates
             else: self.im_set.append(candidates[0])
         else:
-            self.printk('scanning %s...' % s.style_images_folder)
+            self.printk('scanning %s...' % self.style_images_folder)
             if len(candidates) == 0:
                 self.printk('no natch found')
             else:
@@ -125,7 +124,8 @@ class styleWall():
     def select_random_styl(self, append=False):
         imgs = self._get_style_im_list(filtered=False)
         idx = random.randint(0,len(imgs)-1)
-        self.printk('selected rnd style : %s' % (imgs[idx]))
+        self.printk('selected rnd style : %s%s' % \
+                (imgs[idx], (" (+)" if append else "")))
         if not append:
             self.im_set = [idx]
         else:
@@ -138,7 +138,7 @@ class styleWall():
             self.printk('selected base : ' + candidates[0])
             self.base_img_name = candidates[0]
         else:
-            self.printk('scanning %s...' % s.base_img_dir)
+            self.printk('scanning %s...' % self.base_img_dir)
             if len(candidates) == 0:
                 self.printk('no natch found')
             else:
@@ -154,17 +154,22 @@ class styleWall():
     ############################################################################
     def init_run_cnt(self):
         self.run_cnt = 0
-        e = os.listdir(s.out_folder)
+        e = os.listdir(self.out_folder)
         while 'tmp%d' % self.run_cnt in e or '%d_im.png' in e:
             self.run_cnt += 1
 
     def create_tmp_folder(self):
         self.tmp_folder = self.out_folder + '/tmp'
+        self.tmp_tmp = self.tmp_folder + '/tmp'
+        if 'tmp' in os.listdir(self.out_folder):
+            files=[f for f in os.listdir(self.tmp_folder) \
+                                                    if not f.startswith('.')]
+            if len(files) != 0:
+                self.save_tmp_folder()
         os.system('mkdir -p ' + self.tmp_folder)
         os.system('rm -rf ' + self.tmp_folder + '/*')
         os.system('cp ' + self.out_folder + '/.directory ' + self.tmp_folder)
 
-        self.tmp_tmp = self.tmp_folder + '/tmp'
         os.system('mkdir -p ' + self.tmp_tmp)
         os.system('cp ' + self.out_folder + '/.directory ' + self.tmp_tmp)
 
@@ -180,8 +185,7 @@ class styleWall():
     def save_tmp_folder(self):
         os.system('find ' + self.tmp_tmp +
                     ' -regex \'.*[^1]\.png\' -exec rm {} \;')
-        cmd = 'mv ' + self.tmp_folder + ' ' + self.tmp_folder
-        cmd += str(self.run_cnt)
+        cmd = 'mv %s %s%d' % (self.tmp_folder, self.tmp_folder, self.run_cnt)
         os.system(cmd)
 
     ############################################################################
@@ -253,7 +257,6 @@ class styleWall():
             if b.active:
                 loss += b.get_loss()
 
-        #opt = SGD(lr=(self.lrs[0][0]))
         opt=Adam(lr=(self.lrs[0][0]))
         updates = opt.get_updates([stylized], {}, loss)
         to_return = [loss, stylized]
@@ -297,22 +300,23 @@ class styleWall():
     def iterate(self, again=False, save=True, stop_mode='dflt',
             overwrite_tmp=True):
         try:
-            stylized, train_step, opt = self._setup_iterations(again)
+            stylized, step, opt = self._setup_iterations(again)
         except KeyboardInterrupt:
             print('\nKeyboard Interrupt!')
             return
-
-        self.losses = []
-        last_loss = np.Inf
-        best_loss = np.Inf
-        lr_idx=0
+        if not again:
+            self.losses = []
+            self.last_loss = np.Inf
+            self.best_loss = np.Inf
+            self.lr_idx=0
+            self._increment_final_img_counter()
         self.list_bryks()
 
         for i in range(self.ITS):
             tic()
             try:
                 self._randomize_styl()
-                outputs = train_step([])
+                outputs = step([])
             except KeyboardInterrupt:
                 self.printk('\nKeyboard Interrupt!')
                 save = False
@@ -320,38 +324,31 @@ class styleWall():
 
             if (i % self.log_granularity) == 0:
                 self._monitor_bryk_losses(outputs)
-                self.losses.append(self.bryks_losses())
-                curr_loss = outputs[0]
+                li = self.bryks_losses()
+                self.losses.append(li)
+                curr_loss = np.sum(np.array([u for u in li if u == u]))
 
-                lp = last_loss / curr_loss
+                lp = self.last_loss / curr_loss
 
                 if (stop_mode == 'dflt' and
-                        lp < 1 and i > 30 and lr_idx == (len(self.lrs)-1)):
+                        lp < 1 and i > 30 and self.lr_idx == (len(self.lrs)-1)):
                     break
                 sep = ':'
-                if stop_mode == 'best':
-                    if curr_loss < best_loss:
-                        best_loss = curr_loss
-                        self._save_final_image(stylized, verbose=False, increment=False)
-                        sep = '#'
                 self.printk("%-3d %s %s %.3f %.3e || %s"
                     % (i, sep, toc(), lp, curr_loss, self.bryks_losses_log()))
+                self.plot_bryks_losses(mode='save')
 
-                if lp < self.lrs[lr_idx][1] :
-                    lr_idx = lr_idx+1
+                if lp < self.lrs[self.lr_idx][1] :
+                    self.lr_idx = self.lr_idx+1
                     self.printk("switching to lr=%.0e" % \
-                            (self.lrs[lr_idx][0]))
-                    opt.lr = self.lrs[lr_idx][0]
+                            (self.lrs[self.lr_idx][0]))
+                    opt.lr = self.lrs[self.lr_idx][0]
 
-                last_loss = outputs[0]
+                self.last_loss = curr_loss
                 self._save_tmp_image(stylized, overwrite=overwrite_tmp)
 
-        self.save_tmp_folder()
         if save:
-            if stop_mode != 'best':
-                self._save_final_image(stylized)
-            else:
-                self._increment_final_img_counter()
+            self._save_final_image(stylized)
         self.last_image_buffer = K.get_value(stylized)
 
 
@@ -384,21 +381,32 @@ class styleWall():
         self.printk("--------------------------")
 
     def bryks_losses(self):
-        return [ b.loss for b in self.bryks if b.active ]
+#        return [ b.loss for b in self.bryks if b.active ]
+        losses = []
+        for b in self.bryks:
+            if b.active:
+                losses.append(b.loss)
+            else:
+                losses.append(np.nan)
+        return losses
 
     def bryks_nicknames(self):
         return [ b.nickname() for b in self.bryks if b.active ]
 
-    def plot_bryks_losses(self):
+    def plot_bryks_losses(self, mode='show'):
         if not hasattr(self, 'losses'):
             print('no data!'); return
         L = np.array(self.losses)
-        N = self.bryks_nicknames()
+        # N = self.bryks_nicknames()
         for i in range(L.shape[1]):
-            plt.semilogy(L[:,i], label=N[i])
+            plt.semilogy(L[:,i], label=i)
         plt.grid()
         plt.legend()
-        plt.show()
+        if mode == 'show':
+            plt.show()
+        elif mode == 'save':
+            plt.savefig(self.tmp_folder + '/losses.png', bbox_inches="tight")
+            plt.close()
 
 
     def bryks_losses_log(self):
@@ -511,28 +519,39 @@ class styleWall():
         self.tmp_cnt = 0
         self.run_cnt = self.run_cnt+1;
 
-    def _save_final_image(self, tensor, verbose=True, increment=True):
+    def _save_final_image(self, tensor, verbose=True):
         img = self._tensor_to_img(tensor)
         out_name = self.out_name if self.out_name != '' else 'im'
         imname = str(self.run_cnt) + '_' + out_name + '.png'
         self._save_img(self.out_folder + '/' + imname, img)
         if verbose: self.printk(imname + " saved\n")
-        if increment: self._increment_final_img_counter()
 
     ############################################################################
-    def doit(self, save=True, stop_mode='dflt', overwrite_tmp=True):
+    def doit(self, save=True, stop_mode='dflt', overwrite_tmp=False):
         self.copy_chosen_images()
         self.vggs.clear()
         self._get_bryks()
         self._load_images()
         self._get_gramms_target()
-        #self.iterate(save=save)
-        self.iterate(save=save, stop_mode=stop_mode, overwrite_tmp=overwrite_tmp)
+        self.iterate(save=save, stop_mode=stop_mode,
+                        overwrite_tmp=overwrite_tmp)
 
-    def doitagain(self, save=True):
-        self.vggs.clear()
-        self._get_bryks()
-        self._load_images()
-        self._get_gramms_target()
-        self.iterate(again=True, save=save)
+    def doitagain(self, save=True, stop_mode='dflt', overwrite_tmp=False):
+       # self.vggs.clear()
+       # self._get_bryks()
+       # self._load_images()
+       # self._get_gramms_target()
+        self.iterate(again=True, save=save, stop_mode=stop_mode,
+                        overwrite_tmp=overwrite_tmp)
+
+    def random_images(self, styles=1):
+        self.create_tmp_folder()
+        self.select_random_styl()
+        for i in range(styles-1):
+            self.select_random_styl(append=True)
+        if not self.radom_input:
+            self.select_random_base()
+        else:
+            self.printk('no base image, random mode set')
+        self.copy_chosen_images()
 

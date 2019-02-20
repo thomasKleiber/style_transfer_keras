@@ -19,6 +19,20 @@ class bryk:
         self.mask = None
         self.vggs = vggs
 
+    def activate(self):
+        self.active=True
+        try:
+            self.set_loss_factor(1)
+        except Exception as e:
+            print('got exception ' + str(e))
+
+    def desactivate(self):
+        self.active=False
+        try:
+            self.set_loss_factor(0)
+        except Exception as e:
+            print('got exception ' + str(e))
+
     def __str__(self):
         nm = self.im_path
         m = re.match('.*/(.*)\.[jJ][pP][eE]?[gG]', nm)
@@ -107,7 +121,7 @@ class bryk:
         self.get_gram_tgt()
 
     def set_loss_factor(self, factor):
-        K.set_value(self.loss_factor, factor)
+        K.set_value(self.loss_factor, factor*self.active)
 #        self.get_gram_tgt()
 
     def gram_matrix(self, x, mask=None):
@@ -138,3 +152,4 @@ class bryk:
         G = self.gram_matrix(fms[0,:,:,:])
         self.loss_tensor = K.sum(K.square(self.gram - G))
         return self.loss_tensor * self.loss_factor
+
