@@ -10,8 +10,9 @@ import re
 
 
 class bryk:
-    def __init__(self, im_path, layer, pyrdowns, HW, vggs):
+    def __init__(self, im_path, im_idx, layer, pyrdowns, HW, vggs):
         self.im_path = im_path
+        self.im_idx = im_idx
         self.layer = layer
         self.pyrdowns = pyrdowns
         self.HW = HW
@@ -57,6 +58,11 @@ class bryk:
             return 'B' + m.group(1) + 'C' + m.group(2) + '_%d' % self.pyrdowns
         return None
 
+    def is_family(self, b):
+        if b.im_path != self.im_path:
+            return False
+        return True
+
     def open_im(self):
         img = imageio.imread(self.im_path)
         img = resize_keep_scale(img, self.HW)
@@ -101,7 +107,8 @@ class bryk:
         self.mask = None
 
     def resize_mask_for_me(self, mask):
-        mask = resize(mask, self.st.masks[0][0].shape)
+        _, W, H, _ = self.FMs.shape
+        mask = resize(mask, (H, W))
         return np.double(mask != np.zeros(mask.shape))
 
     def set_mask(self, mask):

@@ -96,7 +96,7 @@ class styleWall():
         if not filtered: return imgs
         style_im_list = []
         for n, id_ in enumerate(imgs):
-            if n in self.im_set:
+            for k in range(self.im_set.count(n)):
                style_im_list.append(id_)
         return style_im_list
 
@@ -178,8 +178,9 @@ class styleWall():
         for n, i in enumerate(self.im_set):
             os.system('cp "' + imgs[i] + '" "'
                         + self.tmp_folder + '/i%d_%s"' % (n, basename(imgs[i])))
-        base = self.base_img_dir + '/' + self.base_img_name
-        os.system('cp "' + base + '" "'
+        if not self.radom_input:
+            base = self.base_img_dir + '/' + self.base_img_name
+            os.system('cp "' + base + '" "'
                         + self.tmp_folder + '/b_' + self.base_img_name + '"')
 
     def save_tmp_folder(self):
@@ -196,17 +197,12 @@ class styleWall():
     ############################################################################
     def _get_bryks(self):
         self.bryks = []
-        self.brykd = {}
         imgs = self._get_style_im_list(filtered=True)
-        for im in imgs:
+        for n, im in enumerate(imgs):
             for L in self.style_layers:
                 for p in self.pyrdowns:
-                    b = bryk(im, L, p, self.HW, self.vggs)
+                    b = bryk(im, n, L, p, self.HW, self.vggs)
                     self.bryks.append(b)
-                    k = '%s%d' % (L, p)
-                    if not k in self.brykd: self.brykd[k] = [b]
-                    else: self.brykd[k].append(b)
-
 
     def _load_images(self):
         for b in self.bryks : b.open_im()
@@ -258,6 +254,8 @@ class styleWall():
                 loss += b.get_loss()
 
         opt=Adam(lr=(self.lrs[0][0]))
+        #opt=SGD()
+
         updates = opt.get_updates([stylized], {}, loss)
         to_return = [loss, stylized]
         for b in self.bryks:
@@ -275,20 +273,12 @@ class styleWall():
                 active_idx += 1
 
     ############################################################################
-    def _randomize_styl(self, method='alternate'):
+    def _randomize_styl(self):
         if not hasattr(self, 'rnd_idx'): self.rnd_idx = 0
-        N = len(self.style_layers)*len(self.pyrdowns)
-        if method == 'alternate':
-            self.rnd_idx += 1
-            self.rnd_idx %= N
-        if method == 'rnd_each_batch':
-            self.rnd_idx = random.randint(0, N-1)
-        for k in self.brykd:
-            if method == 'rnd_each_bryk':
-                self.rnd_idx = random.randint(0, N-1)
-            for n, b in enumerate(self.brykd[k]):
-                #b.set_loss_factor(1 if n == self.rnd_idx else 0)
-                b.set_loss_factor(1 if n == self.rnd_idx else 0)
+        self.rnd_idx += 1
+        self.rnd_idx %= len(self.im_set)
+        for b in self.bryks:
+            b.set_loss_factor(1 if b.im_idx == self.rnd_idx else 0)
 
     ############################################################################
     def get_bryk_initial_losses(self, again=False):
@@ -297,8 +287,8 @@ class styleWall():
         return outputs[2:]
 
     ############################################################################
-    def iterate(self, again=False, save=True, stop_mode='dflt',
-            overwrite_tmp=True):
+    def iterate(self, again=False, save=True, stop_mode='toto',
+            overwrite_tmp=False):
         try:
             stylized, step, opt = self._setup_iterations(again)
         except KeyboardInterrupt:
@@ -362,11 +352,12 @@ class styleWall():
             b.get_style_tree(k)
 
     def select_mask(self, bryk_idx, mask_idx, propagate=True):
-        self.bryks[bryk_idx].select_mask(mask_idx)
+        base = self.bryks[bryk_idx]
+        base.select_mask(mask_idx)
         if propagate:
             for n, b in enumerate(self.bryks):
-                if n != bryk_idx:
-                    b.set_mask(self.bryks[bryk_idx].get_mask())
+                if n != bryk_idx and base.is_family(b):
+                    b.set_mask(base.get_mask())
 
     def reset_masks(self):
         for b in self.bryks:
@@ -400,7 +391,8 @@ class styleWall():
         # N = self.bryks_nicknames()
         for i in range(L.shape[1]):
             plt.semilogy(L[:,i], label=i)
-        plt.grid()
+        plt.grid(b=True, which='major')
+        plt.grid(b=True, which='minor', linestyle='--')
         plt.legend()
         if mode == 'show':
             plt.show()
